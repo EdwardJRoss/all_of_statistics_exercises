@@ -17,6 +17,7 @@ bootstrap <- function(x, b, f) {
         xsample <- sample(x, length(x), replace = TRUE)
         tboot[i] <- f(xsample)
     }
+    tboot
 }
 
 bootstrap_ci_normal <- function(x, b, f, alpha) {
@@ -49,10 +50,11 @@ nerve_bootstrap <- bootstrap(nerve, 5000, skewness)
 
 hist(nerve_bootstrap)
 
-nerve_running_sd <- vector("double", length(nerve_bootstrap))
+nerve_running_sd <- sqrt(purrr::accumulate(nerve_bootstrap, function (x, y) x + y^2) / seq(1:length(b)))
+
+## We could do this with an accumulator with a clever merge sort
 nerve_running_quantile <- vector("double", length(nerve_bootstrap))
 for (i in 1:length(nerve_bootstrap)) {
-    nerve_running_sd[i] <- sd(nerve_bootstrap[1:i])
     nerve_running_quantile[i] <- quantile(nerve_bootstrap[1:i], 0.975)
 }
 
@@ -69,18 +71,82 @@ lsat <- c(576, 635, 558,578,666,580,555,661,651,605,653,575,545,572,594)
 gpa <- c(3.39,3.30,2.81,3.03,3.44,3.07,3.00,3.43,3.36,3.13,3.12,2.74,2.76,2.88,3.96)
 boot <- 1000
 
-lsat_gpa <- matrix(c(lsat, gpa), ncol=2)
+lsat_gpa_cor <- cor(lsat, gpa)
 
-lsat_gpa_corr <- corr(lsat_gpa)
-
-lsat_gpa_boot <- vector("double", nrow(lsat_gpa_boot))
+lsat_gpa_boot <- vector("double", length(lsat))
 for (i in 1:boot) {
-    index <- sample(1:nrow(lsat_gpa_boot))
-    lsat_gpa_boot[i] <- corr(lsat_gpa[index, ])
+    index <- sample(1:length(lsat), replace=TRUE)
+    lsat_gpa_boot[i] <- cor(lsat[index], gpa[index])
 }
 
-bootstrap_ci_normal(lsat_gpa, 1000, corr, .05)
+hist(lsat_gpa_boot)
 
-bootstrap_ci_pivotal(nerve, 1000, skewness, .05)
+## 95% confidence intervals
+lsat_gpa_ci_normal <- c(lsat_gpa_cor - 2*sd(lsat_gpa_boot), lsat_gpa_cor + 2*sd(lsat_gpa_boot))
 
-bootstrap_ci_percentile(nerve, 1000, skewness, .05)
+lsat_gpa_ci_pivotal <- c(2 * lsat_gpa_cor - quantile(lsat_gpa_boot, 0.975), 2 * lsat_gpa_cor - quantile(lsat_gpa_boot,0.0275))
+
+lsat_gpa_ci_percentile <- c( quantile(lsat_gpa_boot, 0.0275),  quantile(lsat_gpa_boot,0.975))
+
+## Ex 7.2
+
+n <- 100
+ex2_normal_radius <- vector("numeric", n)
+ex2_normal_centre <- vector("numeric", n)
+for (i in 1:n) {
+    y <- rnorm(50)
+    x <- exp(y)
+    ex2_normal <- bootstrap_ci_normal(x, 100, skewness, .05)
+    ex2_normal_radius[i] <- (ex2_normal[2] - ex2_normal[1]) / 2
+    ex2_normal_centre[i] <- (ex2_normal[2] + ex2_normal[1])/2
+}
+
+## TODO: commentary
+(ex2_pivotal <- bootstrap_ci_pivotal(y, 1000, skewness, .05))
+(ex2_percentile <- bootstrap_ci_percentile(y, 1000, skewness, .05))
+
+
+## Exmple 8.3
+x <- rt(25, 3)
+T <- function(x) (quantile(x, 0.75) - quantile(x, 0.25)) / 1.34
+
+
+(ex2_normal <- bootstrap_ci_normal(x, 1000, T, .05))
+(ex2_pivotal <- bootstrap_ci_pivotal(x, 1000, T, .05))
+(ex2_percentile <- bootstrap_ci_percentile(x, 1000, T, .05))
+
+## Examining Ex 5
+
+iterate_dbl <- function(f, x0, n) {
+    x <- x0
+    ans <- vector("numeric", n)
+    for (i in 1:n) {
+        x <- f(x)
+        ans[i] <- x
+    }
+    ans
+}
+
+n <- 100
+iter <- 1000
+## For plotting convergence
+## Note is numerically unstable
+unconditional_bootstrap_series <- iterate_dbl(function(x) x + mean(sample(rnorm(n), n, replace=TRUE))^2, 0, iter) / 1:iter
+
+## This should be 1
+(unconditional_bootstrap_series[iter] * n) / (2 - 1/n)
+
+
+## Ex 6
+n <- 100
+mu <- 5
+x <- rnorm(n, mu)
+
+## Using if X_i ~ Normal(mu, 1) then sum(X_i) ~ Normal(n * mu, n)
+distribution <- function(x) dnorm(n*log(x), n*mu, sqrt(n))
+
+b <- bootstrap(x, 1000, function(x) mean(exp(x)))
+
+t <- seq(min(b), max(b), by=0.01)
+
+hist(b, 30)
