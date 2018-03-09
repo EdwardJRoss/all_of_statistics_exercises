@@ -142,11 +142,81 @@ n <- 100
 mu <- 5
 x <- rnorm(n, mu)
 
+sample_size <- 1000
+sample <- vector("double",  sample_size)
+for (i in 1:sample_size) {
+    sample[i] <- exp(mean(rnorm(n, mu)))
+}
+
+
 ## Using if X_i ~ Normal(mu, 1) then sum(X_i) ~ Normal(n * mu, n)
-distribution <- function(x) dnorm(n*log(x), n*mu, sqrt(n))
+distribution <- function(x) sqrt(n / 2*pi) * exp(-n*(log(x) - mu)^2) / x
 
-b <- bootstrap(x, 1000, function(x) mean(exp(x)))
+t <- seq(min(sample), max(sample), by=0.01)
 
-t <- seq(min(b), max(b), by=0.01)
+library(ggplot2)
+ggplot() +
+    geom_histogram(data = data.frame(x=sample), mapping=aes(x=x, y=..density..), bins=90) +
+    geom_line(data = data.frame(x=t, y=distribution(t)), mapping=aes(x=x, y=y))
 
-hist(b, 30)
+
+## Exercise 7
+ex7_sample <- runif(50)
+
+theta <- max(ex7_sample)
+
+## Actual distribution: F(t) = t^n/theta^n; f(t) = n * t^(n-1) / theta^(n)
+
+ex7_dist <- function(x, n=50, theta=1) n*x^(n-1) / theta^n
+
+ex7_bootstrap <- bootstrap(ex7_sample, 1000, max)
+
+t = seq(0, 1, by=0.01)
+
+nbins <- 90
+bin_width <- (max(ex7_bootstrap) - min(ex7_bootstrap)) / nbins
+
+
+library(ggplot2)
+ggplot() +
+    geom_histogram(data = data.frame(x=ex7_bootstrap), mapping=aes(x=x, y=..density..), bins=90) +
+    geom_line(data = data.frame(x=t, y=ex7_dist(t)), mapping=aes(x=x, y=y))
+
+## Exercise 8
+
+## Estimating the square of the mean (sqm)
+
+
+sqm <- function(x) mean(x)^2
+
+
+
+## Analytic bootstrap variance
+vboot <- function(x, f=sqm) {
+    bootstraps <- do.call(expand.grid, rep(list(x), length(x)))
+    tdist <- apply(bootstraps, 1, f)
+    mean(tdist ^ 2) - mean(tdist) ^ 2
+}
+
+## Approximate bootstrap variance
+vboot_approx <- function(x, b=10000, f=sqm) {
+    var(bootstrap(x, b, f))
+}
+
+var_n <- function(x, k) {
+    mean((x-mean(x))^k) / length(x) ^ (k-1)
+}
+
+soln <- function(x) {
+    xbar <- mean(x)
+    n <- length(x)
+    var_n(x, 4) + (2 - 3 / n) * var_n(x, 2)^2 + 4 * xbar * var_n(x,3) + 4 * xbar^2 * var_n(x,2)
+}
+
+
+x <- c(0, 0, 1)
+vboot_approx(x)
+vboot(x)
+soln(x)
+
+## Yay it works!
