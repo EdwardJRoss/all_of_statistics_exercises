@@ -79,6 +79,8 @@ ex11_df$mle <- ex11_df$nausea / ex11_df$patients
 ex11_df$se <- sqrt(ex11_df$mle * (1 - ex11_df$mle) / ex11_df$patients)
 
 # Difference from placebo
+ex11_df$odds_ratio <- ex11_df$mle / ex11_df$mle[ex11_df$treatment == 'placebo']
+
 ex11_df$delta <- ex11_df$mle - ex11_df$mle[ex11_df$treatment == 'placebo']
 ex11_df$delta_se <- sqrt(ex11_df$se^2 + ex11_df$se[ex11_df$treatment == 'placebo'] ^2)
 
@@ -87,7 +89,7 @@ ex11_test <- ex11_df[ex11_df$treatment != 'placebo',]
 ex11_test$wald <- abs(ex11_test$delta) / ex11_test$se
 
 ex11_test$signif95 <- ex11_test$wald > qnorm(1 - (1 - 0.95) / 2)
-# So Chloropromazine and Pentobarbital have a significantly different mean to Placebo (lower)
+# So Chloropromazine and Pentobarbital (150mg) have a significantly different mean to Placebo (lower)
 
 ex11_test$bonfe_signif95 <- ex11_test$wald / 4 > qnorm(1 - (1 - 0.95) / 2)
 # None are significantly different by the Bonferonni method
@@ -99,7 +101,7 @@ ex11_test <- ex11_test[order(ex11_test$pvalue),]
 ex11_test$bh <- seq(1:nrow(ex11_test)) / nrow(ex11_test)
 
 ex11_test$bh_signif95 <- ex11_test$pvalue < ex11_test$bh * 0.05
-# So Chloropromazine and Pentobarbital have a significantly different mean to Placebo (lower) by BH method
+# So Chloropromazine and Pentobarbital (150mg)have a significantly different mean to Placebo (lower) by BH method
 
 
 ## Ex 10.12
