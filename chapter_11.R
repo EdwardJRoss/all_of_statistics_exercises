@@ -52,7 +52,111 @@ hist(ex11_2_simulation)
 ex11_2_exp_density <- function(t) {
     ans <- vector("double", length(t))
     for (i in seq_along(t)) {
-        ans[i] <- 1/ t[i] * prod(1/ex11_2 * exp(-(exp(ex11_2) - t[i])^2/ 2))
+        ans[i] <- 1/ t[i] * prod(exp(-(ex11_2 - log(t[i]))^2 / 2))
     }
     ans
 }
+
+## Simulation
+hist(exp(ex11_2_simulation))
+
+# e-f) Test against simulation
+
+ex2_mu <- 5
+ex2_n <- 100
+ex2_sample_size <- 10000
+
+ex2_samples <- matrix(rnorm(ex2_sample_size * ex2_n, ex2_mu, 1), ncol = ex2_n)
+
+# posterior interval
+ex2_in_pi <- function(x, mu=ex2_mu, alpha=0.05) {
+    centre <- mean(x)
+    size <- qnorm(1 - alpha/2) / sqrt(length(x))
+    # c(centre - size, centre+size)
+    abs(centre - mu) < size
+}
+
+
+## 95.16%: This seems excellent
+sum(apply(ex2_samples, 1, ex2_in_pi)) / ex2_sample_size
+
+ex2_in_exp_ci <- function(x, mu=ex2_mu, alpha=0.05) {
+    centre <- exp(mean(x))
+    size <- qnorm(1 - alpha/2) * exp(mean(x)) / sqrt(length(x))
+    # c(centre - size, centre+size)
+    abs(centre - exp(mu)) < size
+}
+
+# 94.85%, acceptable as is approximate confidence interval
+sum(apply(ex2_samples, 1, ex2_in_exp_ci)) / ex2_sample_size
+
+
+# Ex 4b)
+n1 <- 50
+s1 <- 30
+n2 <- 50
+s2 <- 40
+
+p1 <- s1/n1
+p2 <- s2/n2
+
+boot_size <- 1000
+bootstrap1 <- rbinom(boot_size, n1, p1) / n1
+bootstrap2 <- rbinom(boot_size, n2, p2) / n2
+
+bootstrap_se <- sd(bootstrap2 - bootstrap1)
+
+bootstrap_90ci <- c((p2 - p1) - qnorm(1 - 0.1/2) * bootstrap_se, (p2 - p1) + qnorm(1 - 0.1/2) * bootstrap_se)
+
+
+# c) Use prior f(p1, p2) = 1. Use simulation to find posterior mean and 90% Posterior interval.
+
+sim_size <- 1000
+# Prior for each of p1 and p2 is Beta(1, 1) and they are indep
+# Posterior is separately Beta(s + 1, n - s + 1)
+sim_post1 <- rbeta(sim_size, s1 + 1, n1 - s1 + 1)
+sim_post2 <- rbeta(sim_size, s2 + 1, n2 - s2 + 1)
+
+tau_post <- sim_post2 - sim_post1
+hist(tau_post)
+
+# A little lower, but similar to the bootstrap
+post_90ci <- quantile(tau_post, c(0.05, 0.95))
+
+
+# d) Check: se = sqrt(1/(n1*p1*(1-p1)) + 1/(n2*p2*(1-p2)))
+sqrt(1/(n1*p1*(1-p1)) + 1/(n2*p2*(1-p2)))
+sd(log((bootstrap1)/(1-bootstrap1) / ((bootstrap2) / (1-bootstrap2))))
+
+# e)
+
+phi_post <- log((sim_post1) / (1-sim_post1) / ((sim_post2) / (1-sim_post2)))
+
+# Bayesian mean
+mean_phi  <- mean(phi_post)
+
+# Very close to Frequentist approach
+post_90ci_phi <- quantile(phi_post, c(0.05, 0.95))
+
+# Ex 5
+n <- 10
+s <- 2
+
+
+t <- seq(0, 1, 0.01)
+
+alpha <- c(0.5, 1, 10, 100)
+beta <- c(0.5, 1, 10, 100)
+
+ex5_df <- data.frame(
+    t = rep(t, length(alpha)),
+    alpha = rep(alpha, each = length(t)),
+    beta = rep(beta, each = length(t))
+    )
+
+ex5_df$posterior <- with(ex5_df, dbeta(t, alpha + s, beta + n - s))
+ex5_df$alpha_beta <- with(ex5_df, paste(as.character(alpha), as.character(beta), sep=","))
+
+# The stronger the prior the more evidence that is needed to overcome it
+library(ggplot2)
+ggplot(ex5_df, mapping=aes(x=t, y=posterior, group = alpha_beta, col=alpha_beta)) + geom_line()
