@@ -108,3 +108,165 @@ ggplot(carmpg_6b, aes(x=HP, y=MPG, ymin=lwr, ymax=upr)) +
     geom_ribbon(alpha=0.1) +
     geom_line(aes(y=fit))  +
     geom_point()
+# Exercise 7
+carmpg_7 <- read.csv("carmpg.csv")
+
+# First principles
+
+linear_fit <- function(x, y) {
+    solve(t(x) %*% x, t(x) %*% y)
+}
+
+# Doesn't make sense to use MAKEMODEL as it's sparse; coupld split out make
+x7a <- as.matrix(cbind(INTERCEPT=1, carmpg_7[,c(-1,-4)]))
+y7a <- carmpg_7[,4]
+
+coeffs_7a <- linear_fit(x7a, y7a)
+pred_7a <- x7a %*% coeffs_7a
+resid_7a <- y7a - pred_7a
+
+var_7a <- sum(resid_7a^2) / (nrow(x7a) - ncol(x7a))
+
+# Sum of squares fit: 1000
+r2_7a <- sum(resid_7a^2)
+
+stderr_7a <- sqrt(var_7a * diag(solve(t(x7a) %*% x7a)))
+# This is t value in r output
+wald_7a <- coeffs_7a / stderr_7a
+
+# This differs slightly from what R returns
+# It seems to be using a slightly different test
+pvalue_7a <- 2* pnorm(-abs(wald_7a))
+
+# Spread looks ok
+plot(x7a[,2], resid_7a)
+
+plot(x7a[,3], resid_7a)
+
+plot(x7a[,4], resid_7a)
+
+# Using R
+mod_7a <- lm(MPG ~ VOL + HP + SP + WT, carmpg_7)
+summary(mod_7a)
+
+plot(mod_7a)
+
+# 7b)
+# First principles
+mallow_selector <- function(s) {
+    x <- x7a[,s]
+    fit <- linear_fit(x, y7a)
+    pred <- x %*% fit
+    resid <- y7a - pred
+    rms <- sum(resid^2)
+    if (is.null(nrow(x))) {
+        c <- 1
+        r <- length(x)
+    } else {
+        c <- ncol(x)
+        r <- nrow(x)
+    }
+    var <- rms / (r - c)
+    rms + 2 * length(s) * var
+}
+
+mallow_selector(seq(1,5))
+
+# Backward Search
+# Dropping 2 gives smallest result: 1060
+mallow_selector(-1)
+mallow_selector(-2)
+mallow_selector(-3)
+mallow_selector(-4)
+mallow_selector(-5)
+
+# These all increase
+mallow_selector(c(-2, -1))
+mallow_selector(c(-2, -3))
+mallow_selector(c(-2, -4))
+mallow_selector(c(-2, -5))
+
+# So: MPG ~ 1 + HP + SP + WT
+
+
+# Forward Search
+
+# Smallest for 1: 8300
+mallow_selector(1)
+mallow_selector(2)
+mallow_selector(3)
+mallow_selector(4)
+mallow_selector(5)
+
+# Smallest for 1,5: 1500
+mallow_selector(c(1, 2))
+mallow_selector(c(1, 3))
+mallow_selector(c(1, 4))
+mallow_selector(c(1, 5))
+
+# Smallest for 1, 5, 4: 1490.8
+mallow_selector(c(1, 5, 2))
+mallow_selector(c(1, 5, 3))
+mallow_selector(c(1, 5, 4))
+
+
+# 1, 5, 4, 3: 1141
+mallow_selector(c(1, 5, 4, 3))
+mallow_selector(c(1, 5, 4, 2))
+
+# Increases
+mallow_selector(c(1, 5, 4, 3, 2))
+
+# So: MPG ~ 1 + WT + SP + HP
+# Same result
+
+# R automatic way
+step(mod_7a, director="backward")
+step(mod_7a, director="forward")
+
+
+# Ex 7c): Zheng-Loh
+order_7c <- order(-abs(wald_7a))
+
+zl <- double(length(order_7c))
+for (i in seq_along(order_7c)) {
+    x <- x7a[,order_7c[seq(i)]]
+    fit <- linear_fit(x, y7a)
+    pred <- x %*% fit
+    resid <- y7a - pred
+    if (is.null(nrow(x))) {
+        n <- length(x)
+        c <- 1
+    } else {
+        n <- nrow(x)
+        c <- ncol(x)
+    }
+    rms <- sum(resid^2)
+    var <- rms / (n - c)
+    zl[i] <- rms + i * var * log(n)
+}
+# Excludes 2: Same result
+
+
+# d)
+
+subsets <- function(x) {
+    if (!is.null(x) && length(x) > 0) {
+        ans <- list(x)
+
+        for (i in seq_along(x)) {
+            ans <- c(ans, subsets(x[-i]))
+        }
+        ans
+    }
+}
+
+# This is a global maximum for Mallow
+mallow_7d <- mapply(mallow_selector, subsets(seq(1, 5)))
+subsets(seq(1,5))[which.min(mallow_7d)]
+
+
+# We could always use basis expansion to get lots more variables!
+# (logs interaction terms, etc)
+
+## TODO: BIC
