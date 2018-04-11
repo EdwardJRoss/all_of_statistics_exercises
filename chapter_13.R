@@ -270,3 +270,51 @@ subsets(seq(1,5))[which.min(mallow_7d)]
 # (logs interaction terms, etc)
 
 ## TODO: BIC
+
+coris <- read.csv('coris.dat', skip=3, header=FALSE,
+                  col.names=c('rownum', 'sbp', 'tobacco','ldl',
+                              'adiposity','famhist','typea','obesity',
+                              'alcohol','age','chd'))
+
+## Reweighted Least Squares
+## AKA Newton's Method
+# Should probably monitor convergence
+logistic_fit <- function(x, y, tol=1e-6, max_iter=1000) {
+    x <- as.matrix(x)
+    y <- as.matrix(y)
+    # Start with beta = 0. Since this function is pretty nice shoudl converge quickly.
+    beta <- matrix(rep(0, ncol(x)))
+
+
+    for (i in seq(max_iter)) {
+        xbeta <- x %*% beta
+        exp_b <- exp(xbeta)
+        p <- exp_b / (1 + exp_b)
+
+        z <- xbeta + (y - p) / (p * (1-p))
+
+        w <- diag(as.vector(p * (1-p)))
+
+        last_beta <- beta
+        beta <- solve(t(x) %*% w %*% x, t(x) %*% w %*% z)
+
+        sqerr <- sum((last_beta - beta)^2)
+        if (sqerr < tol) {
+            break
+        }
+    }
+
+    if (i == max_iter) {
+        stop(paste0("Too many iterations: ", sqerr))
+    }
+    beta
+}
+
+## Base R:
+## glm(chd ~ ., family=binomial, coris)
+
+x <- cbind(1, coris[-ncol(coris)])
+y <- coris[ncol(coris)]
+logistic_fit(x, y)
+
+# TODO: Backwards search by BIC
