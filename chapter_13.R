@@ -271,6 +271,7 @@ subsets(seq(1,5))[which.min(mallow_7d)]
 
 ## TODO: BIC
 
+
 coris <- read.csv('coris.dat', skip=3, header=FALSE,
                   col.names=c('rownum', 'sbp', 'tobacco','ldl',
                               'adiposity','famhist','typea','obesity',
@@ -318,3 +319,17 @@ y <- coris[ncol(coris)]
 logistic_fit(x, y)
 
 # TODO: Backwards search by BIC
+
+
+## Check on Exercise 13.9
+
+num_sample_9 <- 10000
+n_9 <- 1000
+theta_9 <- 0
+
+sample_9 <- matrix(rnorm(num_sample_9 * n_9, theta_9),
+                   nrow = num_sample_9)
+
+delta_9 <- apply(sample_9, 1, function(x) 1 - n/2 * mean(x)^2)
+
+mean(delta_9 > 0)
