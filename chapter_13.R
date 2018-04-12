@@ -263,19 +263,53 @@ subsets <- function(x) {
 
 # This is a global maximum for Mallow
 mallow_7d <- mapply(mallow_selector, subsets(seq(1, 5)))
-subsets(seq(1,5))[which.min(mallow_7d)]
+
+colnames(x7a)[subsets(seq(1,5))[which.min(mallow_7d)][[1]]]
 
 
 # We could always use basis expansion to get lots more variables!
 # (logs interaction terms, etc)
 
+linear_aic <- function(x, y, b) {
+    n <- nrow(x)
+    k <- ncol(x)
+    rms <- sum((y - x %*% b)^2)
+
+    n * log(2*pi) + n * log(rms / n) + 1 + 2*k
+    #eps <- norm(y - x %*% b)
+
+    #n/2 * log(n-k) - n * log(eps) - (n+k)/2
+}
+
+linear_bic <- function(x, y, b) {
+    n <- nrow(x)
+    k <- ncol(x)
+    eps <- norm(y - x %*% b)
+
+    n/2 * log(n-k) + k/2*log(n) - n * log(eps) - (n-k)/2
+}
+
+b <- linear_fit(x7a, y7a)
 ## TODO: BIC
 
+bic_selection <- function(s) {
+    x <- as.matrix(x7a[,s])
+    b <- linear_fit(x, y7a)
+    linear_bic(x, y7a, b)
+}
 
+bic_7d <- mapply(bic_selection, subsets(seq(1, 5)))
+colnames(x7a)[subsets(seq(1,5))[which.min(bic_7d)][[1]]]
+
+## BIC chooses a much more parsimonious model: HP
+## AIC chooses: 1 + HP + SP + WT
+
+## Exercise 11
 coris <- read.csv('coris.dat', skip=3, header=FALSE,
                   col.names=c('rownum', 'sbp', 'tobacco','ldl',
                               'adiposity','famhist','typea','obesity',
-                              'alcohol','age','chd'))
+                              'alcohol','age','chd'))[, -1]
+
 
 ## Reweighted Least Squares
 ## AKA Newton's Method
@@ -312,13 +346,55 @@ logistic_fit <- function(x, y, tol=1e-6, max_iter=1000) {
 }
 
 ## Base R:
-## glm(chd ~ ., family=binomial, coris)
+## mod <- glm(chd ~ ., family=binomial, coris)
+## AIC(mod)
+## MASS::stepAIC(mod)
 
 x <- cbind(1, coris[-ncol(coris)])
 y <- coris[ncol(coris)]
 logistic_fit(x, y)
 
-# TODO: Backwards search by BIC
+logistic_aic <- function(x, y, b) {
+    x <- as.matrix(x)
+    xb <- x %*% b
+    loglik <- t(y) %*% xb - sum(log(1+exp(xb)))
+    2 * (ncol(x) - loglik)
+}
+
+# Backwards search by AIC
+aic_logistic_search <- function(x, y) {
+    b <- logistic_fit(x, y)
+    this_aic <- logistic_aic(x, y, b)
+    aics <- double(ncol(x))
+    for (i in seq(to=ncol(x))) {
+        aics[i] <- logistic_aic(x[,-i], y, logistic_fit(x[,-i], y))
+    }
+    min_aic <- min(aics)
+    min_index <- which.min(aics)
+
+    if (this_aic <= min_aic) {
+        b
+    } else {
+        # Optimisation: pass through b and this_aic
+        aic_logistic_search(x[,-min_index], y)
+    }
+}
+
+# Much slower than base R/MASS
+best <- aic_logistic_search(x, y)
+
+xb_best <- as.matrix(x[,rownames(best)]) %*% best
+
+p_best <- exp(xb_best) / (1 + exp(xb_best))
+
+
+best_error <- sum(abs(y - (p_best > 0.5))) / nrow(y)
+
+# The best choice by backwards stepwise AIC (488) is:
+# chd ~ tobacco + ldl + famhist + typea + age
+# This is the most effective predictor; not implying causality
+# The training error is 26% is quite high!
+# Especially given p = 1 gives 35% error rate.
 
 
 ## Check on Exercise 13.9
