@@ -123,6 +123,8 @@ spam_lda_pred <- predict(spam_lda, spam)$class
 # Confusion matrix
 table(spam_lda_pred, cspam)
 
+# Error around 11%
+
 # 5% false negatives, 27% false positives
 
 #            cspam
@@ -167,6 +169,8 @@ spam_log_pred <- predict(spam_qda, spam)$class
 
 # Predictions are identical to QDA!
 table(spam_log_pred, spam_qda_pred)
+
+# Error is around 17%
 
 
 # iv) Classification Tree
@@ -271,10 +275,86 @@ splitr <- best_split(mspam[right,], cspam[right])
 
 # b) Apply 5-fold cross-validation
 
-n <- nrow(spam)
-set.seed(428)
-cv_idxs <- shuffle(1:n)
+# This is built into modelr/rsample in the tidyverse
+# as well as carat (and probably a dozen other libraries)
+library(modelr)
+library(dplyr)
+library(purrr)
 
-function cv(model, sample) {
+spam_folds <- crossv_kfold(spam, 5)
 
+set.seed(126)
+spam_folds %>% mutate(lda = map(train, function(df) MASS::lda(is_spam ~ ., df)))
+
+pred_err <- function(pred, outcome) {
+    matches <- pred != outcome
+    mean(matches)
 }
+
+outcome <- function(model) {
+    f <- spam_log$call[['formula']]
+    depvar <- all.vars(f)[[1]]
+    model[[depvar]]
+}
+
+spamf <- as.formula(is_spam ~ .)
+
+# When I use QDA I tend to get rank deficincy
+# Maybe because some of the predictors are correlated?
+spam_fits <- spam_folds %>%
+    mutate(lda_mod = map(train, ~ MASS::lda(spamf, .)),
+           log_mod = map(train, ~ glm(is_spam ~ ., 'binomial', .)),
+           outcome = map(test, ~ as.data.frame(.)$is_spam),
+           lda_pred = map2(lda_mod, test, ~ predict(.x, newdata=.y)$class),
+           log_pred = map2(log_mod, test, ~ predict(.x, newdata=.y) > 0.5),
+           lda_err = map2_dbl(lda_pred, outcome, pred_err),
+           log_err = map2_dbl(log_pred, outcome, pred_err))
+
+# Both around 10-11%
+# For logistic regression it does very well *except* in fold 5
+# it looks like there's something there that's bringing it down (correlated predictors?)
+spam_fits %>% summarise(lda_sd = sd(lda_err),
+                        log_sd = sd(log_err),
+                        log_err = mean(log_err),
+                        lda_err = mean(lda_err))
+
+# By hand
+
+
+# https://stackoverflow.com/questions/7659833/inverse-of-which
+invwhich<-function(indices, outlength, useNames = TRUE)
+{
+    rv<-logical(outlength)
+    if(length(indices) > 0)
+    {
+        rv[indices]<-TRUE
+        if(useNames) names(rv)[indices]<-names(indices)
+    }
+    return(rv)
+}
+
+# We round n to the nearest folds
+# Then return a list of indexes for each cross-fold
+cv_mask <- function(n, folds=5) {
+    size <- n %/% folds
+
+
+    fold_seq <- seq(0, folds - 1)
+
+    cv_idxs <- sample(seq(1, folds*size))
+
+    lapply(fold_seq, function(x) invwhich(cv_idxs[seq(size * x, size * (x+1))], n))
+}
+
+
+set.seed(128)
+cv_masks <- cv_mask(nrow(spam))
+
+# This is pretty gnarly; probably clearer as a loop
+# Outcome is fairly consistent
+lda_error <- vapply(cv_masks, function(subset) mean(predict(MASS::lda(is_spam ~ ., spam[!subset,]), spam[subset,])$class != spam[subset, 'is_spam']), double(1))
+log_error <- vapply(cv_masks, function(subset) mean( (predict(glm(is_spam ~ ., family='binomial', spam[!subset,]), spam[subset,]) > 0.5) != spam[subset, 'is_spam']), double(1))
+
+# 11% for LDA and 8% for Logistic
+mean(lda_error)
+mean(log_error)
