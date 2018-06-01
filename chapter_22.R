@@ -374,3 +374,85 @@ log10_error <- vapply(cv_masks, function(subset) mean( (predict(glm(is_spam ~ .,
 
 mean(lda10_error)
 mean(log10_error)
+
+
+# Let's try the strategy from Max Kuhn, Applied Predictive Modelling, Section 3.6
+# Remove the most correlated predictors
+# 1. Calcualte the correlation matrix of the predictors
+# 2. Determine the two predictors associated with largest absolute pairwise correlation
+# 3. For each determine the average correlation with other variables
+# 4. Remove the variable with highest average correlation
+# 5. Repeat until there are no absolute correlations above the threshold
+
+
+threshold <- 0.75
+removed <- c()
+
+spamcor <- abs(cor(spam) - diag(ncol(spam)))
+
+while (max(spamcor) > threshold) {
+    cor_vars <- arrayInd(which.max(spamcor), dim(spamcor))
+
+    vara <- cor_vars[,1]
+    varb <- cor_vars[,2]
+
+    cora <- mean(spamcor[vara,])
+    corb <- mean(spamcor[varb,])
+
+    if (corb > cora) {
+        v <- varb
+    } else {
+        v <- vara
+    }
+
+    removed <- c(removed, v)
+    spamcor <- spamcor[-v, -v]
+}
+
+kept_vars <- !invwhich(removed, ncol(mspam))
+
+ldacor_error <- vapply(cv_masks, function(subset) mean(predict(MASS::lda(is_spam ~ ., spam[!subset,c(kept_vars, TRUE)]), spam[subset,])$class != spam[subset, 'is_spam']), double(1))
+logcor_error <- vapply(cv_masks, function(subset) mean( (predict(glm(is_spam ~ ., family='binomial', spam[!subset,c(kept_vars, TRUE)]), spam[subset,]) > 0.5) != spam[subset, 'is_spam']), double(1))
+
+# About the same or slightly worse
+mean(ldacor_error)
+mean(logcor_error)
+
+
+# 5. Classify Spam Data using SVMs
+# We could alternatively use implementation at http://svmlight.joachims.org/
+# There is an R interface to this implementation in the klaR package
+
+# install.packages('e1071')
+svmlinear_spam <- e1071::svm(is_spam ~ ., spam, type='C-classification', kernel='linear')
+svmlinear_pred <- predict(svmlinear_spam, spam)
+
+table(cspam, svmlinear_pred)
+#     svmlinear_pred
+#cspam    0    1
+#    0 2663  125
+#    1  185 1628
+
+# I'm aware there are some built in validation tools in SVM, but for fairness use k-fold CV to evaluate
+# Could make this a bit shorter with a function
+library(e1071)
+svm_fits <- spam_folds %>%
+    mutate(linear_mod = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='linear')),
+           poly_mod = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='polynomial')),
+           sig_mod = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='sigmoid')),
+           rad_mod = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='radial')),
+           outcome = map(test, ~ as.data.frame(.)$is_spam),
+           linear_pred = map2(linear_mod, test, ~ predict(.x, newdata=as.data.frame(.y))),
+           poly_pred = map2(poly_mod, test, ~ predict(.x, newdata=as.data.frame(.y))),
+           sig_pred = map2(sig_mod, test, ~ predict(.x, newdata=as.data.frame(.y))),
+           rad_pred = map2(rad_mod, test, ~ predict(.x, newdata=as.data.frame(.y))),
+           sig_err = map2_dbl(sig_pred, outcome, pred_err),
+           rad_err = map2_dbl(rad_pred, outcome, pred_err),
+           poly_err = map2_dbl(poly_pred, outcome, pred_err),
+           linear_err = map2_dbl(linear_pred, outcome, pred_err))
+
+# A linear model actually does slightly better than logistic regression
+# and radial better again
+# Polynomial does *much* worse, and sigmoid a bit worse
+# Obviously there are a lot of hyperparameters we could (over)fit
+svm_fits %>% summarise_at(vars(ends_with("err")), mean)
