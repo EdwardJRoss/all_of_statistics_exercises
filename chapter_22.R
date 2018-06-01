@@ -171,9 +171,12 @@ table(spam_log_pred, spam_qda_pred)
 
 # iv) Classification Tree
 
+# rpart is only one possible library
+# There's also e.g. "tree" which also uses the CART algorithms
+# and C50 which uses Quinlan's C5.0 algorithm
 library(rpart)
 
-spam_tree <- rpart(is_spam ~ ., spam)
+spam_tree <- rpart(is_spam ~ ., spam, method="class")
 
 
 library(rpart.plot)
@@ -190,9 +193,80 @@ table(spam_tree_pred, cspam)
 #         FALSE 2653  296
 #         TRUE   135 1517
 
+
+# We should really prune the tree using cross-validation
+
+printcp(spam_tree)
+
+prune(spam_tree, cp=0.03)
+
 # Construct by hand?
-# We need to check for each variable, and for each possible split value
-# the Gini impurity (which is
+
+## This finds the best split for a single predictor (column) and single categorical factor (outcome)
+## using the Gini index
+split_variable <- function(column, outcome) {
+    idx <- order(column)
+    lvls <- levels(outcome)
+
+    unik <- rev(!duplicated(rev(column[idx])))
+
+    run <- vapply(levels(outcome), function(x) x == outcome[idx], numeric(length(outcome)))
+
+    runsum <- apply(run, 2, cumsum)
+    totals <- apply(run, 2, sum)
+
+    size <- sum(totals)
+
+    gini <- function(row) {
+        prop = row / sum(row)
+        row_complement = totals - row
+        prop_complement = row_complement / sum(row_complement)
+
+        # This is the "prior" of a random varaible being in each split
+        # which we use to weight the Gini index
+        # This isn't described in all of statistics, but is used in the rpart alogorithm
+        weight <- sum(row) / size
+
+        # Gini for each split is (1 - sum(prob_k^2))
+        # Total gini is the weighted sum of the two
+        weight * (1 - sum(prop^2)) + (1 - weight) * (1 - sum(prop_complement^2))
+    }
+
+    gini_coeff <- apply(runsum[unik,], 1, gini)
+    best_idx <- which.min(gini_coeff)
+    best_gini <- gini_coeff[best_idx]
+
+    # Calculate Gini, which.min
+    # which to lookup unik
+    best_split <- column[idx][which(unik)[best_idx]]
+
+    one_length <- sum(runsum[unik,][best_idx,])
+    two_length <- size - one_length
+    length <- min(one_length, two_length)
+
+    list(split=best_split, gini=best_gini, length=length)
+}
+
+best_split <- function(covariate, outcome) {
+    splits <- apply(covariate, 2, function(x) split_variable(x, as.factor(outcome)))
+
+    split_var <- which.min(lapply(splits, function(x) x$gini))
+    ans <- splits[[split_var]]
+    ans[["colnum"]] <- split_var
+    ans
+}
+
+# This phase of the algorithm is a recursive procedure to
+# split down the tree until some stopping condition is met
+# (e.g. max depth, bucket size too small, "complexity" not decreasing enough)
+split_root <- best_split(mspam, cspam)
+
+left <- mspam[,split_root$colnum] <= split_root$split
+right <- !left
+
+splitl <- best_split(mspam[left,], cspam[left])
+splitr <- best_split(mspam[right,], cspam[right])
+
 
 
 # b) Apply 5-fold cross-validation
