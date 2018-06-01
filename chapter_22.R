@@ -358,3 +358,19 @@ log_error <- vapply(cv_masks, function(subset) mean( (predict(glm(is_spam ~ ., f
 # 11% for LDA and 8% for Logistic
 mean(lda_error)
 mean(log_error)
+
+
+## Exercise 3c)
+zero <- cspam == 0
+one <- cspam == 1
+
+# Calculate the p values for whether the means are unequal
+spam_t <- apply(mspam, 2, function(x) t.test(x[zero], x[one])$p.value)
+
+top10 <- order(spam_t) %in% seq(1,10)
+lda10_error <- vapply(cv_masks, function(subset) mean(predict(MASS::lda(is_spam ~ ., spam[!subset,c(top10, TRUE)]), spam[subset,])$class != spam[subset, 'is_spam']), double(1))
+log10_error <- vapply(cv_masks, function(subset) mean( (predict(glm(is_spam ~ ., family='binomial', spam[!subset,c(top10, TRUE)]), spam[subset,]) > 0.5) != spam[subset, 'is_spam']), double(1))
+# It's actually made our predictors significantly worse
+
+mean(lda10_error)
+mean(log10_error)
