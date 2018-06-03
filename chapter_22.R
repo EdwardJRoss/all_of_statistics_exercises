@@ -184,13 +184,13 @@ spam_tree <- rpart(is_spam ~ ., spam, method="class")
 
 
 library(rpart.plot)
-rpart.plot(spam_tree, type=4)
+rpart.plot(spam_tree, type=4, extra=101)
 
-spam_tree_pred <- predict(spam_tree, spam) > 0.5
-
+nm <- colnames(predict(spam_tree))
+spam_tree_pred <- apply(predict(spam_tree), 1, which.max)
 
 # This will be rediculously overfit
-table(spam_tree_pred, cspam)
+table(nm[spam_tree_pred], cspam)
 
 #              cspam
 #spam_tree_pred    0    1
@@ -292,7 +292,7 @@ pred_err <- function(pred, outcome) {
 }
 
 outcome <- function(model) {
-    f <- spam_log$call[['formula']]
+    f <- model$call[['formula']]
     depvar <- all.vars(f)[[1]]
     model[[depvar]]
 }
@@ -436,23 +436,55 @@ table(cspam, svmlinear_pred)
 # I'm aware there are some built in validation tools in SVM, but for fairness use k-fold CV to evaluate
 # Could make this a bit shorter with a function
 library(e1071)
+
 svm_fits <- spam_folds %>%
     mutate(linear_mod = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='linear')),
-           poly_mod = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='polynomial')),
-           sig_mod = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='sigmoid')),
-           rad_mod = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='radial')),
            outcome = map(test, ~ as.data.frame(.)$is_spam),
            linear_pred = map2(linear_mod, test, ~ predict(.x, newdata=as.data.frame(.y))),
-           poly_pred = map2(poly_mod, test, ~ predict(.x, newdata=as.data.frame(.y))),
-           sig_pred = map2(sig_mod, test, ~ predict(.x, newdata=as.data.frame(.y))),
-           rad_pred = map2(rad_mod, test, ~ predict(.x, newdata=as.data.frame(.y))),
-           sig_err = map2_dbl(sig_pred, outcome, pred_err),
-           rad_err = map2_dbl(rad_pred, outcome, pred_err),
-           poly_err = map2_dbl(poly_pred, outcome, pred_err),
            linear_err = map2_dbl(linear_pred, outcome, pred_err))
 
 # A linear model actually does slightly better than logistic regression
-# and radial better again
-# Polynomial does *much* worse, and sigmoid a bit worse
-# Obviously there are a lot of hyperparameters we could (over)fit
 svm_fits %>% summarise_at(vars(ends_with("err")), mean)
+
+
+# Excercise 22.6
+
+# LDA is a linear classifier so VC dimension is d+1
+d <- ncol(iris) - 1
+n <- nrow(iris)
+
+# Error is > 1
+# Too loose a bound to be informative!
+alpha <- 0.05
+vc_error95 <- sqrt(32 / n * log(8 * (n^(d+1) + 1) / alpha))
+
+iris_lda <- MASS::lda(Species ~ ., iris)
+training_loss <- mean(predict(iris_lda)$class != iris$Species)
+
+# Excercise 22.8
+
+# Could probably do some clever mapping here?
+svmpoly_fits <- spam_folds %>%
+    mutate(mod1 = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='polynomial', degree=1, gamma=1, coef0=1)),
+           mod2 = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='polynomial', degree=2, gamma=1, coef0=1)),
+           mod3 = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='polynomial', degree=3, gamma=1, coef0=1)),
+           mod4 = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='polynomial', degree=4, gamma=1, coef0=1)),
+           mod5 = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='polynomial', degree=5, gamma=1, coef0=1)),
+           mod6 = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='polynomial', degree=6, gamma=1, coef0=1)),
+           mod7 = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='polynomial', degree=7, gamma=1, coef0=1)),
+           mod8 = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='polynomial', degree=8, gamma=1, coef0=1)),
+           mod9 = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='polynomial', degree=9, gamma=1, coef0=1)),
+           mod10 = map(train, ~ svm(spamf, ., type = 'C-classification', kernel='polynomial', degree=10, gamma=1, coef0=1)),
+           outcome = map(test, ~ as.data.frame(.)$is_spam))
+
+svmpoly_preds <- svmpoly_fits %>%
+    mutate_at(vars(starts_with('mod')), .funs=funs(map2(., test, ~ predict(.x, newdata=as.data.frame(.y))))) %>%
+    select(starts_with('mod'), 'outcome')
+
+svmpoly_cverr <- mutate_at(svmpoly_preds, vars(starts_with('mod')), .funs=funs(map2_dbl(., outcome, pred_err))) %>%
+    select(-outcome)
+
+
+summarise_all(svmpoly_cverr, mean)
+
+summarise_all(svmpoly_cverr, sd)
